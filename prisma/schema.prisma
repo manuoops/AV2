@@ -1,0 +1,171 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum PapelUsuario {
+  ADMINISTRADOR
+  OPERADOR_CADASTRO
+  GESTOR_ALMOXARIFADO
+  AUDITORIA
+}
+
+enum StatusLote {
+  RECEBIDO
+  EM_TRIAGEM
+  TRIAGEM_CONCLUIDA
+  ENCAMINHADO
+  FINALIZADO
+}
+
+enum EstadoFisico {
+  NOVO
+  BOM_ESTADO
+  USADO_LEVE
+  USADO_MODERADO
+  DANIFICADO_LEVE
+  DANIFICADO_GRAVE
+  INSERVIVEL
+}
+
+enum StatusRastreamento {
+  AGUARDANDO_TRIAGEM
+  EM_TRIAGEM
+  AGUARDANDO_DESMONTE
+  EM_DESMONTE
+  PECAS_REAPROVEITADAS
+  MATERIAL_RECICLAVEL
+  DESCARTE_SEGURO
+  BAIXA_DEFINITIVA
+}
+
+enum TipoEquipamento {
+  COMPUTADOR_MESA
+  NOTEBOOK
+  MONITOR
+  IMPRESSORA
+  SERVIDOR
+  ROTEADOR
+  CABO_ESTRUTURADO
+  FONTE_ALIMENTACAO
+}
+
+model Usuario {
+  id           String       @id @default(uuid()) @db.Uuid
+  usuario      String       @unique
+  hashSenha    String
+  papel        PapelUsuario
+  ativo        Boolean      @default(true)
+  ultimoAcesso DateTime?
+  criadoEm     DateTime     @default(now())
+  criadoPorId  String?      @db.Uuid
+  criadoPor    Usuario?     @relation("UsuariosCriados", fields: [criadoPorId], references: [id], onDelete: SetNull)
+  usuariosCriados Usuario[] @relation("UsuariosCriados")
+  versao       Int          @default(1)
+
+  @@index([criadoPorId])
+  @@map("usuarios")
+}
+
+model Organizacao {
+  id                String    @id @default(uuid()) @db.Uuid
+  razaoSocial       String
+  cnpj              String    @unique @db.VarChar(14)
+  inscricaoEstadual String
+  enderecoCompleto  String
+  telefone          String
+  email             String
+  dataCadastro      DateTime  @default(now())
+  ativo             Boolean   @default(true)
+  versao            Int       @default(1)
+  contrato          Contrato?
+  lotes             Lote[]
+
+  @@map("organizacoes")
+}
+
+model Contrato {
+  id                  String      @id @default(uuid()) @db.Uuid
+  organizacaoId       String      @unique @db.Uuid
+  organizacao         Organizacao @relation(fields: [organizacaoId], references: [id], onDelete: Restrict)
+  dataAssinatura      DateTime    @default(now())
+  dataVencimento      DateTime
+  clausulas           String[]
+  valorMensal         Decimal     @db.Decimal(12, 2)
+  renovacaoAutomatica Boolean     @default(false)
+  versao              Int         @default(1)
+
+  @@map("contratos")
+}
+
+model Lote {
+  id                  String      @id @default(uuid()) @db.Uuid
+  dataEntrada         DateTime
+  organizacaoId       String      @db.Uuid
+  organizacao         Organizacao @relation(fields: [organizacaoId], references: [id], onDelete: Restrict)
+  notaFiscal          String
+  transportadora      String
+  statusProcessamento StatusLote  @default(RECEBIDO)
+  observacoes         String      @default("")
+  versao              Int         @default(1)
+
+  equipamentos Equipamento[]
+
+  @@index([organizacaoId])
+  @@index([dataEntrada])
+  @@map("lotes")
+}
+
+model Equipamento {
+  id                  String             @id @default(uuid()) @db.Uuid
+  codigoBarrasInterno String             @unique
+  tipo                TipoEquipamento
+  marca               String
+  modelo              String
+  anoFabricacao       Int
+  estadoFisico        EstadoFisico
+  pesoQuilogramas     Float
+  loteId              String             @db.Uuid
+  lote                Lote               @relation(fields: [loteId], references: [id], onDelete: Restrict)
+  posicaoNoLote       Int
+  statusRastreamento  StatusRastreamento @default(AGUARDANDO_TRIAGEM)
+  versao              Int                @default(1)
+
+  movimentacoes Movimentacao[]
+
+  @@unique([loteId, posicaoNoLote])
+  @@index([statusRastreamento])
+  @@map("equipamentos")
+}
+
+model Movimentacao {
+  id            String      @id @default(uuid()) @db.Uuid
+  equipamentoId String      @db.Uuid
+  equipamento   Equipamento @relation(fields: [equipamentoId], references: [id], onDelete: Restrict)
+  dataHora      DateTime    @default(now())
+  origem        String
+  destino       String
+  responsavel   String
+  observacao    String      @default("")
+
+  @@index([equipamentoId, dataHora])
+  @@map("movimentacoes")
+}
+
+model JournalTransacao {
+  id                 String   @id @default(uuid()) @db.Uuid
+  timestamp          DateTime @default(now())
+  operacao           String
+  entidade           String
+  dadosAntes         Json?
+  dadosDepois        Json?
+  usuarioResponsavel String
+  ativo              Boolean  @default(true)
+
+  @@index([timestamp])
+  @@map("journal")
+}
